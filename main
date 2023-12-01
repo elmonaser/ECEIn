@@ -1,0 +1,992 @@
+#include <stdio.h>
+#include <conio.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <time.h>
+
+const int LIGNES= 10;
+const int COLONNES =20;
+const int NB_OISEAUX= 4;//pour les blocs du niveau 2
+const int scovie=1000;
+const int scotemps=10;
+
+void changerCouleur(int couleur);
+char *codetriche();
+int score();
+void niveau1();
+void niveau2();
+void niveau3();
+
+// Structure pour les coordonnees du personnage
+struct Personnage {
+    int x;
+    int y;
+};
+
+// Structure pour gérer le chronomètre
+struct Chronometre {
+    int secondes;
+};
+
+// Structure pour gérer les vies de Snoopy
+struct Vies {
+    int nombre;
+};
+
+// Structure pour représenter un oiseau
+struct Oiseau {
+    int x;
+    int y;
+    int attrape;
+};
+
+// Structure pour représenter un bloc mouvant pour le niveau 3
+struct BlocMouvant {
+    int x;
+    int y;
+    int dx; // Déplacement horizontal
+    int dy; // Déplacement vertical
+};
+// Structure pour représenter un bloc Fixe pour le niveau 2
+struct BlocFixe {
+    int x;
+    int y;
+};
+struct Balle {
+    int x;
+    int y;
+    int directionX;
+    int directionY;
+};
+
+int leaderboardNiveau1[5] = {0};
+int leaderboardNiveau2[5] = {0};
+int leaderboardNiveau3[5] = {0};
+
+ void sauvegarder(int niveau, struct Personnage personnage, struct Vies vies, struct Chronometre chronometre, struct Oiseau oiseaux[], int oiseauxAttrapes) {
+    FILE *fichier = fopen("sauvegarde.txt", "w");
+    if (fichier == NULL) {
+        printf("Erreur lors de l'ouverture du fichier de sauvegarde.\n");
+        return;
+    }
+
+    fprintf(fichier, "%d\n", niveau);
+    fprintf(fichier, "%d %d %d %d %d\n", personnage.x, personnage.y, vies.nombre, chronometre.secondes, oiseauxAttrapes);
+    for (int i = 0; i < NB_OISEAUX; i++) {
+        fprintf(fichier, "%d %d %d\n", oiseaux[i].x, oiseaux[i].y, oiseaux[i].attrape);
+    }
+
+    fclose(fichier);
+    printf("Jeu sauvegardé.\n");
+}
+void sauvegarderScores(int leaderboardNiveau1[], int leaderboardNiveau2[], int leaderboardNiveau3[]) {
+    FILE *fichier = fopen("scores.txt", "w");
+    if (fichier == NULL) {
+        printf("Erreur lors de l'ouverture du fichier des scores.\n");
+        return;
+    }
+
+    for (int i = 0; i < 5; i++) {
+        fprintf(fichier, "%d %d %d\n", leaderboardNiveau1[i], leaderboardNiveau2[i], leaderboardNiveau3[i]);
+    }
+
+    fclose(fichier);
+    printf("Scores sauvegardés.\n");
+}
+int charger(struct Personnage *personnage, struct Vies *vies, struct Chronometre *chronometre, struct Oiseau oiseaux[], int *oiseauxAttrapes) {
+    FILE *fichier = fopen("sauvegarde.txt", "r");
+    if (fichier == NULL) {
+        printf("Erreur lors de l'ouverture du fichier de sauvegarde.\n");
+        return -1;
+    }
+
+    int niveau;
+    fscanf(fichier, "%d\n", &niveau);
+    fscanf(fichier, "%d %d %d %d %d\n", &personnage->x, &personnage->y, &vies->nombre, &chronometre->secondes, oiseauxAttrapes);
+    for (int i = 0; i < NB_OISEAUX; i++) {
+        fscanf(fichier, "%d %d %d\n", &oiseaux[i].x, &oiseaux[i].y, &oiseaux[i].attrape);
+    }
+
+    fclose(fichier);
+    printf("Jeu chargé.\n");
+    return niveau;
+}
+void chargerScores(int leaderboardNiveau1[], int leaderboardNiveau2[], int leaderboardNiveau3[]) {
+    FILE *fichier = fopen("scores.txt", "r");
+    if (fichier == NULL) {
+        printf("Pas de fichier de scores trouvé. Création d'un nouveau fichier.\n");
+        sauvegarderScores(leaderboardNiveau1, leaderboardNiveau2, leaderboardNiveau3);
+        return;
+    }
+
+    for (int i = 0; i < 5; i++) {
+        fscanf(fichier, "%d %d %d\n", &leaderboardNiveau1[i], &leaderboardNiveau2[i], &leaderboardNiveau3[i]);
+    }
+
+    fclose(fichier);
+    printf("Scores chargés.\n");
+}
+void ajouterScore(int niveau, int score) {
+    int *leaderboard;
+    switch(niveau)
+    {
+        case 1: leaderboard = leaderboardNiveau1; break;
+        case 2: leaderboard = leaderboardNiveau2; break;
+        case 3: leaderboard = leaderboardNiveau3; break;
+        default: return;
+    }
+
+
+    int i;
+    for (i = 0; i < 5 && leaderboard[i] > score; i++);
+
+    // Décaler les scores inférieurs
+    for (int j =5-1;j>i;j--) {
+        leaderboard[j] = leaderboard[j - 1];
+    }
+
+    // Insérer le nouveau score
+    if (i<5) {
+        leaderboard[i] = score;
+    }
+    sauvegarderScores(leaderboardNiveau1, leaderboardNiveau2, leaderboardNiveau3);
+}
+void afficherLeaderboard(int niveau) {
+    int *leaderboard;
+    switch(niveau) {
+        case 1: leaderboard = leaderboardNiveau1; break;
+        case 2: leaderboard = leaderboardNiveau2; break;
+        case 3: leaderboard = leaderboardNiveau3; break;
+        default: return;  // Niveau inconnu
+    }
+
+    printf("LEADERBOARD NIVEAU %d :\n", niveau);
+    for (int i=0; i<5 ;i++) {
+        if (leaderboard[i]>0) {
+            printf("%de place : %d\n", i + 1, leaderboard[i]);
+        }
+    }
+}
+
+int calculerScore(int secondes, int vies) {
+    return (secondes * scotemps) + (vies * scovie);
+}
+
+//fonction utile pour le niveau 2
+int peutDeplacer(struct Personnage personnage, int direction, struct BlocFixe blocs[], int nbBlocs) {
+    int nouvelleX = personnage.x;
+    int nouvelleY = personnage.y;
+
+    // Calcul des nouvelles coordonnées en fonction de la direction
+    switch (direction) {
+        case 0: // Haut
+            nouvelleY--;
+            break;
+        case 1: // Droite
+            nouvelleX++;
+            break;
+        case 2: // Bas
+            nouvelleY++;
+            break;
+        case 3: // Gauche
+            nouvelleX--;
+            break;
+    }
+
+    // Vérifie si la nouvelle case est occupée par un bloc fixe
+    for (int k = 0; k < nbBlocs; k++) {
+        if (blocs[k].x == nouvelleX && blocs[k].y == nouvelleY) {
+            return 0; // Le déplacement n'est pas autorisé
+        }
+    }
+
+    // Le déplacement est autorisé
+    return 1;
+}
+
+// Fonction pour afficher le plateau de jeu du niveau 0 proto
+void afficherPlateau(struct Personnage personnage, struct Vies vies, struct Chronometre chronometre, struct Oiseau oiseaux[], int oiseauxAttrapes) {
+    int i, j;
+
+    int largeurConsole = 120;
+
+    // Calcul de l'espace à ajouter pour centrer le plateau
+    int espacementHorizontal = (largeurConsole - (COLONNES * 7)) / 2;
+
+    // Efface l'écran
+    system("cls");
+
+    for (i = 0; i < LIGNES; i++) {
+        // Affichage de l'espace horizontal
+        for (j = 0; j < espacementHorizontal; j++) {
+            printf(" ");
+        }
+
+        for (j = 0; j < COLONNES; j++) {
+            int oiseauAttrape = 0;
+            for (int k = 0; k < NB_OISEAUX; k++) {
+                if (oiseaux[k].x == j && oiseaux[k].y == i && oiseaux[k].attrape == 0) {
+                    // Affiche un oiseau en triangle
+                    printf("\x1F ");
+                    oiseauAttrape = 1;
+                    break;
+                }
+            }
+            if (!oiseauAttrape) {
+                if (i == personnage.y && j == personnage.x) {
+                    // Affiche SNOOPY
+                    printf("SNOOPY");
+                } else {
+                    printf("+-----+");
+                }
+                //Sinon affiche la case
+            }
+        }
+        printf("\n");
+
+        for (j = 0; j < espacementHorizontal; j++) {
+            printf(" ");
+        }
+
+        for (j = 0; j < COLONNES; j++) {
+            int oiseauAttrape = 0;
+            for (int k = 0; k < NB_OISEAUX; k++) {
+                if (oiseaux[k].x == j && oiseaux[k].y == i && oiseaux[k].attrape == 0) {
+                    // Affiche un oiseau avec le caractère 31 de la table ANSI
+                    printf("\x1F ");
+                    oiseauAttrape = 1;
+                    break;
+                }
+            }
+            if (!oiseauAttrape) {
+                printf("|     |");
+            }
+        }
+        printf("\n");
+    }
+
+    // Ligne du bas
+    for (j = 0; j < espacementHorizontal; j++) {
+        printf(" ");
+    }
+
+    for (j = 0; j < COLONNES; j++) {
+        printf(" ");
+    }
+    printf("\n");
+
+    // Affiche le nombre d'oiseaux attrapés
+    printf("OISEAUX ATTRAPES : %d\n", oiseauxAttrapes);
+
+    // Affiche les vies et le chronomètre en dessous des oiseaux attrapés
+    printf("Vies : ");
+    for (int i = 0; i < vies.nombre; i++) {
+        printf("%c ", 0x03); // Affiche un cœur qui va disparaitre en fonction du temps
+    }
+    printf("\n");
+    printf("Chronomètre : %02d SECONDES\n", chronometre.secondes);
+}
+
+//plateau pour le niveau 1, ancien niveau 2
+void afficherPlateauniveau1(struct Personnage personnage, struct Vies vies, struct Chronometre chronometre, struct Oiseau oiseaux[], int oiseauxAttrapes, struct BlocFixe blocs[]) {
+    system("cls");
+    const int NB_BLOCS = 30;
+
+    for (int i = 0; i < LIGNES; i++) {
+        for (int j = 0; j < COLONNES; j++) {
+            int oiseauAttrape = 0;
+            for (int k = 0; k < NB_OISEAUX; k++) {
+                if (oiseaux[k].x == j && oiseaux[k].y == i && oiseaux[k].attrape == 0) {
+                    printf("\x1F "); // Caractère pour l'oiseau
+                    oiseauAttrape = 1;
+                    break;
+                }
+            }
+
+            int blocFixePresent = 0;
+            for (int k = 0; k < NB_BLOCS; k++) {
+                if (blocs[k].x == j && blocs[k].y == i) {
+                    printf("\xDB "); // Caractère ANSI pour un carré plein
+                    blocFixePresent = 1;
+                    break;
+                }
+            }
+
+            if (!oiseauAttrape && !blocFixePresent) {
+                if (i == personnage.y && j == personnage.x) {
+                    printf("\x01 "); // Caractère ANSI pour le visage souriant
+                } else {
+                    printf(". "); // Points pour les cases vides
+                }
+            }
+        }
+        printf("\n");
+    }
+
+    printf("OISEAUX ATTRAPES : %d\n", oiseauxAttrapes);
+    printf("Vies : ");
+    for (int i = 0; i < vies.nombre; i++) {
+        printf("\x03 "); // Caractère ANSI pour un cœur
+    }
+    printf("\n");
+    printf("Chronomètre : %02d SECONDES\n", chronometre.secondes);
+}
+
+//plateau pour le niveau 2, l'ancien niveau 3
+void afficherPlateaublocmouv(struct Personnage personnage, struct Vies vies, struct Chronometre chronometre, struct Oiseau oiseaux[], int oiseauxAttrapes, struct BlocMouvant blocs[]) {
+    system("cls");
+    const int NB_BLOCS = 10;
+
+    for (int i = 0; i < LIGNES; i++) {
+        for (int j = 0; j < COLONNES; j++) {
+            int oiseauAttrape = 0;
+            for (int k = 0; k < NB_OISEAUX; k++) {
+                if (oiseaux[k].x == j && oiseaux[k].y == i && oiseaux[k].attrape == 0) {
+                    printf("\x1F ");
+                    oiseauAttrape = 1;
+                    break;
+                }
+            }
+
+            int blocMouvantPresent = 0;
+            for (int k = 0; k < NB_BLOCS; k++) {
+                if (blocs[k].x == j && blocs[k].y == i) {
+                    printf("\xDB\xDB ");
+                    blocMouvantPresent = 1;
+                    break;
+                }
+            }
+
+            if (!oiseauAttrape && !blocMouvantPresent) {
+                if (i == personnage.y && j == personnage.x) {
+                    printf("\x01 ");
+                } else {
+                    printf(". ");
+                }
+            }
+        }
+        printf("\n");
+    }
+
+    printf("OISEAUX ATTRAPES : %d\n", oiseauxAttrapes);
+    printf("Vies : ");
+    for (int i = 0; i < vies.nombre; i++) {
+        printf("\x03 ");
+    }
+    printf("\n");
+    printf("Chronomètre : %02d SECONDES\n", chronometre.secondes);
+}
+
+
+void afficherPlateauballe(struct Personnage personnage, struct Vies vies, struct Chronometre chronometre, struct Oiseau oiseaux[], int oiseauxAttrapes, struct Balle balle) {
+    system("cls");
+
+    for (int i = 0; i < LIGNES; i++) {
+        for (int j = 0; j < COLONNES; j++) {
+            int oiseauAttrape = 0;
+            for (int k = 0; k < NB_OISEAUX; k++) {
+                if (oiseaux[k].x == j && oiseaux[k].y == i && oiseaux[k].attrape == 0) {
+                    changerCouleur(FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_INTENSITY);
+                    printf("\x1F ");
+                    changerCouleur(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+                    oiseauAttrape = 1;
+                    break;
+                }
+            }
+            if (!oiseauAttrape) {
+                if (i == personnage.y && j == personnage.x) {
+                    changerCouleur(FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+                    printf("\x01 "); // Caractère ANSI pour le visage souriant
+                    changerCouleur(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+                } else if (i == balle.y && j == balle.x) {
+                    changerCouleur(FOREGROUND_RED | FOREGROUND_INTENSITY);
+                    printf("O ");
+                    changerCouleur(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+                } else {
+                    printf(". ");
+                }
+            }
+        }
+        printf("\n");
+    }
+
+    printf("OISEAUX ATTRAPES : %d\n", oiseauxAttrapes);
+    printf("Vies : ");
+    for (int i = 0; i < vies.nombre; i++) {
+        printf("\x03 ");
+    }
+    printf("\n");
+    printf("Chronomètre : %02d SECONDES\n", chronometre.secondes);
+}
+
+
+// Fonction pour perdre une vie
+int perdreUneVie(struct Vies *vies) {
+    if (vies->nombre > 0) {
+        vies->nombre--;
+        printf("Snoopy a perdu une vie. Reste %d vies.\n", vies->nombre);
+        Sleep(2000); // Attend 2 secondes après avoir perdu une vie
+        if (vies->nombre == 0) {
+            return 0; // Si plus de vie, retourne 0 pour indiquer la fin de partie
+        }
+    }
+    return 1; // Sinon, retourne 1 pour continuer la partie
+}
+
+void changerCouleur(int couleur) {
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), couleur);
+}
+
+// Fonction pour mettre à jour la position de la balle
+void mettreAJourBalle(struct Balle *balle) {
+    balle->x += balle->directionX;
+    balle->y += balle->directionY;
+
+    // Si la balle atteint le bord du plateau, changer de direction
+    if (balle->x <= 0 || balle->x >= COLONNES - 1) {
+        balle->directionX = -balle->directionX;
+    }
+
+    if (balle->y <= 0 || balle->y >= LIGNES - 1) {
+        balle->directionY = -balle->directionY;
+    }
+}
+
+// Fonction pour vérifier si la balle touche Snoopy
+int balleToucheSnoopy(struct Balle balle, struct Personnage snoopy)
+{
+    return (balle.x == snoopy.x && balle.y == snoopy.y);
+}
+
+int peutDeplacer1(struct Personnage personnage, int direction, struct BlocFixe blocs[], int nbBlocs, struct Vies *vies) {
+    int nouvelleX = personnage.x;
+    int nouvelleY = personnage.y;
+
+    switch (direction) {
+        case 0: // Haut
+            nouvelleY--;
+            break;
+        case 1: // Droite
+            nouvelleX++;
+            break;
+        case 2: // Bas
+            nouvelleY++;
+            break;
+        case 3: // Gauche
+            nouvelleX--;
+            break;
+    }
+
+    for (int k = 0; k < nbBlocs; k++) {
+        if (blocs[k].x == nouvelleX && blocs[k].y == nouvelleY) {
+            if (rand() % 2 == 0) {
+                return perdreUneVie(vies);
+            } else {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+// procédure du niveau 1 anciennement niveau 2
+void niveau1(){
+    int niveau=1;
+    const int NB_BLOCS = 30;
+    struct Personnage personnage = {COLONNES / 2, LIGNES / 2};
+    struct Chronometre chronometre = {120};
+    struct Vies vies = {3};
+
+    struct Oiseau oiseaux[NB_OISEAUX];
+    srand(time(NULL));
+
+    for (int i = 0; i < NB_OISEAUX; i++) {
+        oiseaux[i].x = rand() % COLONNES;
+        oiseaux[i].y = rand() % LIGNES;
+        oiseaux[i].attrape = 0;
+    }
+
+    struct BlocFixe blocs[NB_BLOCS];
+    srand(time(NULL));
+
+    for (int i = 0; i < NB_BLOCS; i++) {
+        do {
+            blocs[i].x = rand() % COLONNES;
+            blocs[i].y = rand() % LIGNES;
+        } while (blocs[i].x == personnage.x && blocs[i].y == personnage.y);
+
+        for (int j = 0; j < NB_OISEAUX; j++) {
+            if (blocs[i].x == oiseaux[j].x && blocs[i].y == oiseaux[j].y) {
+                i--;
+                break;
+            }
+        }
+    }
+
+    int oiseauxAttrapes = 0;
+    int jeuEnPause = 0;
+    int continuer = 1;
+    int score = 0;
+
+    while (continuer) {
+        if (!jeuEnPause) {
+            afficherPlateauniveau1(personnage, vies, chronometre, oiseaux, oiseauxAttrapes, blocs);
+
+            Sleep(1000);
+            chronometre.secondes--;
+
+            if (chronometre.secondes == 0) {
+                if (!perdreUneVie(&vies)) {
+                    printf("\n\nGAME OVER\n");
+                    Sleep(3000);
+                    continuer=0;
+                } else {
+                    chronometre.secondes = 120;
+                }
+            }
+
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 's') {
+        sauvegarder(niveau, personnage, vies, chronometre, oiseaux, oiseauxAttrapes);
+    }
+                if (touche == 32) {
+                    jeuEnPause = 1;
+                    printf("\nPAUSE\n");
+                } else if (touche == 224) {
+                    touche = _getch();
+                    switch (touche) {
+                        case 72:
+                            if (personnage.y > 0 && peutDeplacer1(personnage, 0, blocs, NB_BLOCS, &vies)) {
+                                personnage.y--;
+                            }
+                            break;
+                        case 77:
+                            if (personnage.x < COLONNES - 1 && peutDeplacer1(personnage, 1, blocs, NB_BLOCS, &vies)) {
+                                personnage.x++;
+                            }
+                            break;
+                        case 80:
+                            if (personnage.y < LIGNES - 1 && peutDeplacer1(personnage, 2, blocs, NB_BLOCS, &vies)) {
+                                personnage.y++;
+                            }
+                            break;
+                        case 75:
+                            if (personnage.x > 0 && peutDeplacer1(personnage, 3, blocs, NB_BLOCS, &vies)) {
+                                personnage.x--;
+                            }
+                            break;
+                    }
+                }
+            }
+
+            for (int i = 0; i < NB_OISEAUX; i++) {
+                if (personnage.x == oiseaux[i].x && personnage.y == oiseaux[i].y && oiseaux[i].attrape == 0) {
+                    oiseaux[i].attrape = 1;
+                    oiseauxAttrapes++;
+                }
+            }
+        } else {
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 32) {
+                    jeuEnPause = 0;
+                }
+            }
+        }
+            if (oiseauxAttrapes == NB_OISEAUX) {
+             score = calculerScore(chronometre.secondes, vies.nombre);
+             printf("\n\nVOUS AVEZ REUSSI\nScore : %d\n", score);
+             ajouterScore(1, score);
+             Sleep(3000);
+             continuer = 0;
+             niveau2();
+
+        }
+    }
+}
+
+// procédure du niveau 2 anciennement niveau 3
+void niveau2(){
+    int niveau=2;
+    const int NB_BLOCS=10;
+
+    struct Personnage personnage = {COLONNES / 2, LIGNES / 2};
+    struct Chronometre chronometre = {120};
+    struct Vies vies = {3};
+
+    struct Oiseau oiseaux[NB_OISEAUX];
+    for (int i = 0; i < NB_OISEAUX; i++) {
+        oiseaux[i].x = rand() % COLONNES;
+        oiseaux[i].y = rand() % LIGNES;
+        oiseaux[i].attrape = 0;
+    }
+
+    struct BlocMouvant blocs[NB_BLOCS];
+    for (int i = 0; i < NB_BLOCS; i++) {
+        blocs[i].x = rand() % COLONNES;
+        blocs[i].y = rand() % LIGNES;
+        if (i < NB_BLOCS / 2) {
+            blocs[i].dx = 1;
+            blocs[i].dy = 0;
+        } else {
+            blocs[i].dx = 0;
+            blocs[i].dy = 1;
+        }
+    }
+
+    int oiseauxAttrapes = 0;
+    srand(time(NULL));
+
+    int jeuEnPause = 0;
+    int continuer = 1;
+    int score = 0;
+
+    while (continuer) {
+        if (!jeuEnPause) {
+            afficherPlateaublocmouv(personnage, vies, chronometre, oiseaux, oiseauxAttrapes, blocs);
+
+            Sleep(1000);
+            chronometre.secondes--;
+
+            if (chronometre.secondes == 0) {
+                if (!perdreUneVie(&vies)) {
+                    printf("\n\nGAME OVER\n");
+                    Sleep(3000);
+                    continuer = 0;
+                } else {
+                    chronometre.secondes = 120;
+                }
+            }
+
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 's') {
+        sauvegarder(niveau, personnage, vies, chronometre, oiseaux, oiseauxAttrapes);
+    }
+                if (touche == 32) {
+                    jeuEnPause = 1;
+                    printf("\nPAUSE\n");
+                } else if (touche == 224) {
+                    touche = _getch();
+                    switch (touche) {
+                        case 72:
+                            if (personnage.y > 0) {
+                                personnage.y--;
+                            }
+                            break;
+                        case 77:
+                            if (personnage.x < COLONNES - 1) {
+                                personnage.x++;
+                            }
+                            break;
+                        case 80:
+                            if (personnage.y < LIGNES - 1) {
+                                personnage.y++;
+                            }
+                            break;
+                        case 75:
+                            if (personnage.x > 0) {
+                                personnage.x--;
+                            }
+                            break;
+                    }
+
+                    for (int i = 0; i < NB_OISEAUX; i++) {
+                        if (personnage.x == oiseaux[i].x && personnage.y == oiseaux[i].y && oiseaux[i].attrape == 0) {
+                            oiseaux[i].attrape = 1;
+                            oiseauxAttrapes++;
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < NB_BLOCS; i++) {
+                blocs[i].x += blocs[i].dx;
+                blocs[i].y += blocs[i].dy;
+
+                if (blocs[i].dx != 0 && (blocs[i].x <= 0 || blocs[i].x >= COLONNES - 1)) {
+                    blocs[i].dx *= -1;
+                }
+                if (blocs[i].dy != 0 && (blocs[i].y <= 0 || blocs[i].y >= LIGNES - 1)) {
+                    blocs[i].dy *= -1;
+                }
+
+                if (blocs[i].x == personnage.x && blocs[i].y == personnage.y) {
+                    if (!perdreUneVie(&vies)) {
+                        printf("\n\nGAME OVER\n");
+                        Sleep(3000);
+                        continuer = 0;
+                    }
+                }
+            }
+        } else {
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 32) {
+                    jeuEnPause = 0;
+                }
+            }
+        }
+            if (oiseauxAttrapes == NB_OISEAUX) {
+            score = calculerScore(chronometre.secondes, vies.nombre);
+            printf("\n\nVOUS AVEZ REUSSI\nScore : %d\n", score);
+            ajouterScore(2, score);
+            Sleep(3000);
+            continuer = 0;
+            niveau3();
+        }
+    }
+}
+
+//procédure du nouveau niveau 3, avec la balle
+void niveau3(){
+    int niveau=3;
+    struct Personnage personnage = {COLONNES / 2, LIGNES / 2};  // Position de départ du personnage
+    struct Chronometre chronometre = {120}; // 120 secondes
+    struct Vies vies = {3}; // 3 vies
+
+    // Initialisation des oiseaux
+    struct Oiseau oiseaux[NB_OISEAUX];
+    for (int i = 0; i < NB_OISEAUX; i++) {
+        oiseaux[i].x = rand() % COLONNES;
+        oiseaux[i].y = rand() % LIGNES;
+        oiseaux[i].attrape = 0;
+    }
+
+    int oiseauxAttrapes = 0; // Compteur d'oiseaux attrapés
+    srand(time(NULL));
+
+    int jeuEnPause = 0;
+    int continuer = 1;
+
+    // Initialisation de la balle
+    struct Balle balle = {COLONNES / 2, LIGNES / 2, 1, 1}; // Direction diagonale vers le bas et la droite
+
+    while (continuer) {
+        if (!jeuEnPause) {
+            // Affiche le plateau de jeu avec
+            // Affiche le plateau de jeu avec le personnage, les vies, le compteur d'oiseaux attrapés, la balle et le chronomètre
+            afficherPlateauballe(personnage, vies, chronometre, oiseaux, oiseauxAttrapes, balle);
+
+            // Mise à jour du chronomètre
+            Sleep(1000); // Attente d'une seconde
+            chronometre.secondes--;
+
+            // Si le chronomètre atteint 0, perdre une vie
+            if (chronometre.secondes == 0) {
+                if (vies.nombre >1) {
+                    perdreUneVie(&vies);
+                    // Réinitialiser le chronomètre
+                    chronometre.secondes = 120;
+                } else {
+                    // GAME OVER
+                    printf("\n\nGAME OVER\n");
+                    Sleep(3000); // Attend 3 secondes avant de quitter
+                    continuer = 0;
+                }
+            }
+
+            // Mise à jour de la position de la balle
+            mettreAJourBalle(&balle);
+
+            // Vérifier si la balle touche Snoopy
+            if (balleToucheSnoopy(balle,personnage)) {
+                perdreUneVie(&vies);
+                // Réinitialiser la position de la balle
+                balle.x = COLONNES / 2;
+                balle.y = LIGNES / 2;
+            }
+
+            // Gestion des entrées clavier avec les touches fléchées
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 's') {
+                sauvegarder(niveau, personnage, vies, chronometre, oiseaux, oiseauxAttrapes);
+            }
+
+                // Vérifiez si la touche "Espace" est enfoncée pour mettre en pause
+                if (touche == 32) {
+                    jeuEnPause = 1;
+                    printf("\nPAUSE\n");
+                } else if (touche == 224) {
+                    // Touche fléchée détectée
+                    touche = _getch();
+                    switch (touche) {
+                        case 72: // Flèche haut
+                            if (personnage.y > 0) {
+                                personnage.y--;
+                            }
+                            break;
+                        case 77: // Flèche droite
+                            if (personnage.x < COLONNES - 1) {
+                                personnage.x++;
+                            }
+                            break;
+                        case 80: // Flèche bas
+                            if (personnage.y < LIGNES - 1) {
+                                personnage.y++;
+                            }
+                            break;
+                        case 75: // Flèche gauche
+                            if (personnage.x > 0) {
+                                personnage.x--;
+                            }
+                            break;
+                    }
+
+                    // Vérifier si Snoopy attrape un oiseau
+                    for (int i = 0; i < NB_OISEAUX; i++) {
+                        if (personnage.x == oiseaux[i].x && personnage.y == oiseaux[i].y && oiseaux[i].attrape == 0) {
+                            oiseaux[i].attrape = 1;
+                            oiseauxAttrapes++;
+                        }
+                    }
+                }
+            }
+        } else {
+            // En pause, attendre que la touche "Espace" soit pressée pour reprendre le jeu
+            if (_kbhit()) {
+                int touche = _getch();
+                if (touche == 32) {
+                    jeuEnPause = 0; // Reprendre le jeu
+                }
+            }
+        }
+
+        // Terminer le jeu si tous les oiseaux sont attrapés
+        if (oiseauxAttrapes == NB_OISEAUX) {
+            int score;
+            score = calculerScore(chronometre.secondes, vies.nombre);
+            printf("\n\nVOUS AVEZ REUSSI\nScore : %d\n", score);
+            ajouterScore(3,score);
+            Sleep(3000);
+            continuer = 0;
+        }
+
+
+    }
+
+}
+
+
+
+// système de mot de passe
+char *codetriche() {
+    static char motdepasse[100]; // Utilisation de "static" pour que la chaîne soit conservée entre les appels
+
+    printf("Saisissez le mot de passe du niveau souhaité : \n");
+    scanf("%99s", motdepasse); // Utilisez scanf pour lire un mot de passe sans espace
+
+    printf("Mot de passe saisi : %s\n", motdepasse);
+
+    return motdepasse;
+}
+
+
+int main() {
+
+    // Charger les scores au démarrage du jeu
+    chargerScores(leaderboardNiveau1, leaderboardNiveau2, leaderboardNiveau3);
+    int choix;
+
+    const char *motdepasse1 = "mdpniveau1";
+    const char *motdepasse2 = "mdpniveau2";
+    const char *motdepasse3 = "mdpniveau3";
+    const char *motdepasse4 = "mdpniveau4";
+
+    const char *essai;
+
+    do {
+
+            printf("Tapez:\n"
+                   "1: Pour afficher les règles.\n"
+                   "2: Lancer un nouveau jeu à partir du niveau 1.\n"
+                   "3: Charger une partie.\n"
+                   "4: Lancer un niveau à partir de son mot de passe.\n"
+                   "5: Scores.\n"
+                   "6: Quitter\n");
+            fflush(stdin);
+            scanf("%d", &choix);  // choix de l'action à réaliser par l'utilisateur
+            if (choix < 1 || choix > 6) {
+                printf("Erreur, vous deviez saisir un chiffre entre 1 et 6.\n");
+                continue;  // Retourne au début de la boucle pour redemander une saisie valide.
+            }
+
+        switch (choix) {  // C'est le menu
+            case 1:
+                printf("LA REVANCHE DE SNOOPY\n"
+                       "Snoopy se déplace sur le plateau,\n"
+                       "Vous devez attraper les 4 oiseaux pour finir le niveau.\n"
+                       "Vous avez 120 secondes pour terminer un niveau sinon vous perdez une vie!\n"
+                       "Vous avez initialement 3 vies, après ça le jeu prend fin!\n"
+                       "Le score est égal au temps restant multiplié par 100!");    // Affichage des règles du jeu
+                break;
+
+            case 2:
+                niveau1(); // Sous-prog qui lance un nouveau jeu à partir du niveau 1
+
+                break;
+
+            case 3:{
+                    struct Personnage personnage;
+                    struct Vies vies;
+                    struct Chronometre chronometre;
+                    struct Oiseau oiseaux[NB_OISEAUX];
+                    int oiseauxAttrapes;
+                     int niveau = charger(&personnage, &vies, &chronometre, oiseaux, &oiseauxAttrapes);
+                     if (niveau == 1) {
+                            niveau1(); // lancez niveau1 avec les données chargées
+                     }
+                            else if (niveau == 2) {
+                                    niveau2(); // lancez niveau2 avec les données chargées
+                            } else if (niveau == 3) {
+                                niveau3();
+                                break;
+                                }
+            }
+            case 4: {
+                essai = codetriche();
+                int resultat = strcmp(essai, motdepasse1);
+
+                if (resultat == 0) {
+                    niveau1();  // Lancer le niveau 1
+                } else {
+                    resultat = strcmp(essai, motdepasse2);
+                    if (resultat == 0) {
+                        niveau2(); // Lancer le niveau 2
+                    } else {
+                        resultat = strcmp(essai, motdepasse3);
+                        if (resultat == 0) {
+                            niveau3();  // Lancer le niveau 3
+                        } else {
+                            resultat = strcmp(essai, motdepasse4);
+                            if (resultat == 0) {
+                                // Lancer le niveau 4
+                            } else {
+                                printf("Le mot de passe saisi ne correspond à aucun niveau!\n");
+                            }
+                        }
+                    }
+                }
+            }
+                break;
+
+            case 5:
+               printf("Choisissez le niveau pour lequel vous voulez voir le leaderboard (1, 2, 3) : ");
+               int niveauChoisi;
+               scanf("%d", &niveauChoisi);
+               afficherLeaderboard(niveauChoisi);
+               break;
+            case 6:
+                printf("Vous avez fermé le jeu, AU REVOIR!\n\n\n");
+                break;
+
+            default:
+                printf("Choix invalide. Veuillez entrer un chiffre entre 0 et 5.\n\n\n");
+        }
+
+    }while(choix!=6);
+
+
+    return 0;
